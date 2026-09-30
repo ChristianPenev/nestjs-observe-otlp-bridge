@@ -1,0 +1,24 @@
+{
+  "name": "nestjs-observe-oss-example",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A NestJS app instrumented with the real @nestjs/observe SDK, reporting to nestjs-observe-oss.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "npm run build && node dist/main.js"
+  },
+  "dependencies": {
+    "@nestjs/common": "^12.0.1",
+    "@nestjs/core": "^12.0.1",
+    "@nestjs/observe": "^0.3.5",
+    "@nestjs/platform-express": "^12.0.1",
+    "@nestjs/schedule": "^12.0.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "target": "es2022",
+    // Nest resolves constructor dependencies from `design:paramtypes`, which only
+    // `tsc` emits - esbuild-based runners (tsx, esbuild-register) silently drop it
+    // and every injected provider arrives as `undefined`.
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    // Parameter properties must be assigned, not defined, or the decorator metadata
+    // above is overwritten with `undefined` at construction time.
+    "useDefineForClassFields": false,
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"]
+}

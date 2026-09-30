@@ -9,8 +9,10 @@ axum = "0.8.9"
 chrono = "0.4.45"
 flate2 = "1.1.10"
 hex = "0.4.3"
-opentelemetry-proto = { version = "0.33.0", default-features = false, features = ["gen-tonic-messages", "trace", "logs", "metrics"] }
+opentelemetry-proto = { version = "0.33.0", default-features = false, features = ["gen-tonic-messages", "trace", "logs", "metrics", "with-serde"] }
 prost = "0.14.4"
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider", "gzip", "json", "http2", "charset"] }
+rustls = { version = "0.23.45", default-features = false, features = ["ring", "std", "logging", "tls12"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = "0.11.0"
@@ -20,3 +22,9 @@ tower-http = { version = "0.7.1", features = ["trace"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 uuid = { version = "1.26.1", features = ["v4"] }
+
+[dev-dependencies]
+opentelemetry-proto = { version = "0.33.0", default-features = false, features = ["gen-tonic-messages", "trace", "logs", "metrics", "with-serde"] }
+prost = "0.14.4"
+serde_json = "1.0.151"
+tower = { version = "0.5.3", features = ["util"] }

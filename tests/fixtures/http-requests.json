@@ -1,0 +1,271 @@
+{
+  "serviceId": "example-api",
+  "snapshots": [
+    {
+      "p": "http",
+      "a": {
+        "m": "GET",
+        "ou": "/users/1",
+        "sc": 200
+      },
+      "ti": "01a0f4a1-5d1f-7e3c-a7d4-a723e3d24721",
+      "ct": "2026-09-30T23:23:30.976Z",
+      "t": [
+        {
+          "o": "auto",
+          "c": "AuthGuard",
+          "m": "canActivate",
+          "so": 0.6150000000006912,
+          "s": "01a0f4a1-5d20-7b5c-86b3-200582a1bca1",
+          "d": 2.736124999999447
+        },
+        {
+          "o": "auto",
+          "c": "LoggingInterceptor",
+          "m": "intercept",
+          "so": 3.9181250000001455,
+          "s": "01a0f4a1-5d24-7598-8c8e-f839bc97b404",
+          "d": 0.05616600000030303
+        },
+        {
+          "o": "auto",
+          "c": "UsersController",
+          "m": "getUser",
+          "so": 4.340291000000434,
+          "ch": [
+            {
+              "o": "auto",
+              "c": "UsersService",
+              "m": "findUser",
+              "so": 4.381457999999839,
+              "ch": [
+                {
+                  "o": "auto",
+                  "c": "UsersService",
+                  "m": "readFromStore",
+                  "so": 4.435790999999881,
+                  "s": "01a0f4a1-5d24-713e-a2d9-6855c337b350",
+                  "d": 12.45049999999992
+                }
+              ],
+              "s": "01a0f4a1-5d24-74d0-9ae8-316500f03919",
+              "d": 12.950792000000547
+            }
+          ],
+          "s": "01a0f4a1-5d24-7c3a-a385-4de9b73e86b3",
+          "d": 12.997792000000118
+        }
+      ],
+      "op": "/users/:id",
+      "d": 21.06854100000055
+    },
+    {
+      "p": "http",
+      "a": {
+        "m": "GET",
+        "ou": "/users/missing/9",
+        "sc": 404
+      },
+      "ti": "01a0f4a1-5d43-7c68-b56f-cc7f98944744",
+      "ct": "2026-09-30T23:23:31.011Z",
+      "t": [
+        {
+          "o": "auto",
+          "c": "AuthGuard",
+          "m": "canActivate",
+          "so": 0.19058399999994435,
+          "s": "01a0f4a1-5d43-76cc-a58b-547fc1cc9f4d",
+          "d": 3.5201659999993353
+        },
+        {
+          "o": "auto",
+          "c": "LoggingInterceptor",
+          "m": "intercept",
+          "so": 3.8807499999993524,
+          "s": "01a0f4a1-5d47-7370-bdb9-94763565a00a",
+          "d": 0.03800000000046566
+        },
+        {
+          "o": "auto",
+          "c": "UsersController",
+          "m": "getMissing",
+          "so": 4.0222499999999854,
+          "ch": [
+            {
+              "o": "auto",
+              "c": "UsersService",
+              "m": "findUser",
+              "so": 4.094416999999339,
+              "ch": [
+                {
+                  "o": "auto",
+                  "c": "UsersService",
+                  "m": "readFromStore",
+                  "so": 4.125208999999813,
+                  "s": "01a0f4a1-5d47-75fc-990d-b1072d100049",
+                  "d": 13.36279099999956
+                }
+              ],
+              "s": "01a0f4a1-5d47-7df1-a6f5-4027fa4e04cf",
+              "d": 14.056000000000495,
+              "e": true
+            }
+          ],
+          "s": "01a0f4a1-5d47-71c6-b660-e7568dd0ab5d",
+          "d": 14.173999999999978,
+          "e": {
+            "message": "No user with id does-not-exist",
+            "stack": "NotFoundException: No user with id does-not-exist\n    at UsersService.findUser (file:///home/dev/dev/nestjs-observe-oss/examples/nestjs-app/dist/users.service.js:23:19)",
+            "cls": "NotFoundException"
+          }
+        }
+      ],
+      "op": "/users/missing/:id",
+      "d": 20.3804999999993,
+      "e": {
+        "message": "No user with id does-not-exist",
+        "stack": "NotFoundException: No user with id does-not-exist\n    at UsersService.findUser (file:///home/dev/dev/nestjs-observe-oss/examples/nestjs-app/dist/users.service.js:23:19)",
+        "cls": "NotFoundException"
+      },
+      "rq": {
+        "headers": {
+          "accept": "*/*",
+          "host": "localhost:3000",
+          "user-agent": "curl/8.7.1"
+        }
+      }
+    },
+    {
+      "p": "http",
+      "a": {
+        "m": "GET",
+        "ou": "/users/boom/all",
+        "sc": 500
+      },
+      "ti": "01a0f4a1-5d62-7a36-a22b-3c9b4fcd0303",
+      "ct": "2026-09-30T23:23:31.042Z",
+      "t": [
+        {
+          "o": "auto",
+          "c": "AuthGuard",
+          "m": "canActivate",
+          "so": 0.14608399999997346,
+          "s": "01a0f4a1-5d62-7ae1-a403-27bdfa9dacd2",
+          "d": 3.5096659999999247
+        },
+        {
+          "o": "auto",
+          "c": "LoggingInterceptor",
+          "m": "intercept",
+          "so": 3.7579169999999067,
+          "s": "01a0f4a1-5d66-7488-a604-53874fb32486",
+          "d": 0.026041999999506515
+        },
+        {
+          "o": "auto",
+          "c": "UsersController",
+          "m": "boom",
+          "so": 3.8237499999995634,
+          "s": "01a0f4a1-5d66-7ae9-8970-4376f6374e49",
+          "d": 0.1977500000002692,
+          "e": {
+            "message": "deliberate failure from the example app",
+            "stack": "Error: deliberate failure from the example app\n    at UsersController.boom (file:///home/dev/dev/nestjs-observe-oss/examples/nestjs-app/dist/users.controller.js:33:15)\n    at UsersController.boom (file:///home/dev/dev/nestjs-observe-oss/examples/nestjs-app/node_modules/@nestjs/observe/dist/instrument/create-instance-decorator.instrument.js:214:79)\n    at UsersController.boom (file:///home/dev/dev/nestjs-observe-oss/examples/nestjs-app/node_modules/@nestjs/observe/dist/instrument/create-instance-decorator.instrument.js:71:36)\n    at AsyncLocalStorage.run (node:internal/async_local_storage/async_context_frame:63:14)\n    at UsersController.boom (file:///home/dev/dev/nestjs-observe-oss/examples/nestjs-app/node_modules/@nestjs/observe/dist/instrument/create-instance-decorator.instrument.js:66:24)\n    at file:///home/dev/dev/nestjs-observe-oss/examples/nestjs-app/node_modules/@nestjs/core/router/router-execution-context.js:44:37\n    at InterceptorsConsumer.transformDeferred (file:///home/dev/dev/nestjs-observe-oss/examples/nestjs-app/node_modules/@nestjs/core/interceptors/interceptors-consumer.js:32:29)\n    at file:///home/dev/dev/nestjs-observe-oss/examples/nestjs-app/node_modules/@nestjs/core/interceptors/interceptors-consumer.js:15:60\n    at AsyncResource.runInAsyncScope (node:async_hooks:227:14)\n    at bound (node:async_hooks:258:16)",
+            "cls": "Error"
+          }
+        }
+      ],
+      "op": "/users/boom/all",
+      "d": 6.299874999999702,
+      "e": {
+        "message": "deliberate failure from the example app",
+        "stack": "Error: deliberate failure from the example app\n    at UsersController.boom (file:///home/dev/dev/nestjs-observe-oss/examples/nestjs-app/dist/users.controller.js:33:15)\n    at UsersController.boom (file:///home/dev/dev/nestjs-observe-oss/examples/nestjs-app/node_modules/@nestjs/observe/dist/instrument/create-instance-decorator.instrument.js:214:79)\n    at UsersController.boom (file:///home/dev/dev/nestjs-observe-oss/examples/nestjs-app/node_modules/@nestjs/observe/dist/instrument/create-instance-decorator.instrument.js:71:36)\n    at AsyncLocalStorage.run (node:internal/async_local_storage/async_context_frame:63:14)\n    at UsersController.boom (file:///home/dev/dev/nestjs-observe-oss/examples/nestjs-app/node_modules/@nestjs/observe/dist/instrument/create-instance-decorator.instrument.js:66:24)\n    at file:///home/dev/dev/nestjs-observe-oss/examples/nestjs-app/node_modules/@nestjs/core/router/router-execution-context.js:44:37\n    at InterceptorsConsumer.transformDeferred (file:///home/dev/dev/nestjs-observe-oss/examples/nestjs-app/node_modules/@nestjs/core/interceptors/interceptors-consumer.js:32:29)\n    at file:///home/dev/dev/nestjs-observe-oss/examples/nestjs-app/node_modules/@nestjs/core/interceptors/interceptors-consumer.js:15:60\n    at AsyncResource.runInAsyncScope (node:async_hooks:227:14)\n    at bound (node:async_hooks:258:16)",
+        "cls": "Error"
+      },
+      "rq": {
+        "headers": {
+          "accept": "*/*",
+          "host": "localhost:3000",
+          "user-agent": "curl/8.7.1"
+        }
+      }
+    }
+  ],
+  "forwardLogs": true,
+  "serviceVersion": "47995a68cc5a796499f861675f533264e17b44df",
+  "logs": [
+    {
+      "timestamp": 1790810610993,
+      "traceId": "01a0f4a1-5d1f-7e3c-a7d4-a723e3d24721",
+      "spanId": "01a0f4a1-5d24-74d0-9ae8-316500f03919",
+      "level": "log",
+      "context": "UsersService",
+      "text": "Loaded user 1"
+    },
+    {
+      "timestamp": 1790810611028,
+      "traceId": "01a0f4a1-5d43-7c68-b56f-cc7f98944744",
+      "spanId": "01a0f4a1-5d47-7df1-a6f5-4027fa4e04cf",
+      "level": "warn",
+      "context": "UsersService",
+      "text": "No user with id does-not-exist"
+    },
+    {
+      "timestamp": 1790810611047,
+      "traceId": "01a0f4a1-5d62-7a36-a22b-3c9b4fcd0303",
+      "level": "error",
+      "context": "ExceptionsHandler",
+      "text": "Error: deliberate failure from the example app"
+    },
+    {
+      "timestamp": 1790810611047,
+      "traceId": "01a0f4a1-5d62-7a36-a22b-3c9b4fcd0303",
+      "text": "    at UsersController.boom (file:///home/dev/dev/nestjs-observe-oss/examples/nestjs-app/dist/users.controller.js:33:15)"
+    },
+    {
+      "timestamp": 1790810611047,
+      "traceId": "01a0f4a1-5d62-7a36-a22b-3c9b4fcd0303",
+      "text": "    at UsersController.boom (file:///home/dev/dev/nestjs-observe-oss/examples/nestjs-app/node_modules/@nestjs/observe/dist/instrument/create-instance-decorator.instrument.js:214:79)"
+    },
+    {
+      "timestamp": 1790810611047,
+      "traceId": "01a0f4a1-5d62-7a36-a22b-3c9b4fcd0303",
+      "text": "    at UsersController.boom (file:///home/dev/dev/nestjs-observe-oss/examples/nestjs-app/node_modules/@nestjs/observe/dist/instrument/create-instance-decorator.instrument.js:71:36)"
+    },
+    {
+      "timestamp": 1790810611047,
+      "traceId": "01a0f4a1-5d62-7a36-a22b-3c9b4fcd0303",
+      "text": "    at AsyncLocalStorage.run (node:internal/async_local_storage/async_context_frame:63:14)"
+    },
+    {
+      "timestamp": 1790810611047,
+      "traceId": "01a0f4a1-5d62-7a36-a22b-3c9b4fcd0303",
+      "text": "    at UsersController.boom (file:///home/dev/dev/nestjs-observe-oss/examples/nestjs-app/node_modules/@nestjs/observe/dist/instrument/create-instance-decorator.instrument.js:66:24)"
+    },
+    {
+      "timestamp": 1790810611047,
+      "traceId": "01a0f4a1-5d62-7a36-a22b-3c9b4fcd0303",
+      "text": "    at file:///home/dev/dev/nestjs-observe-oss/examples/nestjs-app/node_modules/@nestjs/core/router/router-execution-context.js:44:37"
+    },
+    {
+      "timestamp": 1790810611047,
+      "traceId": "01a0f4a1-5d62-7a36-a22b-3c9b4fcd0303",
+      "text": "    at InterceptorsConsumer.transformDeferred (file:///home/dev/dev/nestjs-observe-oss/examples/nestjs-app/node_modules/@nestjs/core/interceptors/interceptors-consumer.js:32:29)"
+    },
+    {
+      "timestamp": 1790810611047,
+      "traceId": "01a0f4a1-5d62-7a36-a22b-3c9b4fcd0303",
+      "text": "    at file:///home/dev/dev/nestjs-observe-oss/examples/nestjs-app/node_modules/@nestjs/core/interceptors/interceptors-consumer.js:15:60"
+    },
+    {
+      "timestamp": 1790810611047,
+      "traceId": "01a0f4a1-5d62-7a36-a22b-3c9b4fcd0303",
+      "text": "    at AsyncResource.runInAsyncScope (node:async_hooks:227:14)"
+    },
+    {
+      "timestamp": 1790810611047,
+      "traceId": "01a0f4a1-5d62-7a36-a22b-3c9b4fcd0303",
+      "text": "    at bound (node:async_hooks:258:16)   Trace ID: 01a0f4a1-5d62-7a36-a22b-3c9b4fcd0303"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+# Rust
+/target
+
+# The example app (Node)
+node_modules/
+examples/nestjs-app/dist/
+*.tsbuildinfo
+
+# Local configuration. `Cargo.lock` is deliberately NOT ignored: this crate builds
+# a binary, and a committed lock file is what makes a build reproducible.
+.env
+.env.*
+!.env.example
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# macOS
+.DS_Store
