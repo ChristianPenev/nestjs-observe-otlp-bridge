@@ -51,35 +51,41 @@ fn runtime_gauges_carry_their_units() {
 }
 
 #[test]
-fn gc_counters_are_delta_sums() {
-    let metrics = mapped(r#"{"serviceId":"api","runtime":{"g":{"c":3,"td":12.5}}}"#);
-    let collections = find(&metrics, "nestjs.runtime.gc.collections");
-    let metric::Data::Sum(sum) = collections.data.as_ref().unwrap() else {
-        panic!("expected a sum");
-    };
-    assert_eq!(
-        sum.aggregation_temporality,
-        AggregationTemporality::Delta as i32
-    );
-    assert!(sum.is_monotonic);
-}
-
-#[test]
-fn a_custom_counter_is_a_delta_sum_of_its_increase() {
-    let metrics = mapped(
-        r#"{"serviceId":"api","custom":[
+fn counters_export_as_monotonic_delta_sums() {
+    // The SDK zeroes its counters after every collection window, so they must be
+    // exported with delta temporality rather than as cumulative totals, or a
+    // backend reads each window's figure as a running total that keeps resetting.
+    for (label, payload, name, expected) in [
+        (
+            "runtime gc",
+            r#"{"serviceId":"api","runtime":{"g":{"c":3,"td":12.5}}}"#,
+            "nestjs.runtime.gc.collections",
+            3.0,
+        ),
+        (
+            // `iv` is the increase since the last flush; `v` is the lifetime
+            // total, and exporting that as a delta would wildly overcount.
+            "a custom counter reports its increase, not its total",
+            r#"{"serviceId":"api","custom":[
                 {"n":"orders","t":"counter","v":{"default":500},"iv":{"default":12}}
             ]}"#,
-    );
-    let orders = find(&metrics, "nestjs.custom.orders");
-    assert_eq!(double(orders), 12.0);
-    let metric::Data::Sum(sum) = orders.data.as_ref().unwrap() else {
-        panic!("expected a sum");
-    };
-    assert_eq!(
-        sum.aggregation_temporality,
-        AggregationTemporality::Delta as i32
-    );
+            "nestjs.custom.orders",
+            12.0,
+        ),
+    ] {
+        let metrics = mapped(payload);
+        let metric = find(&metrics, name);
+        let metric::Data::Sum(sum) = metric.data.as_ref().unwrap() else {
+            panic!("{label}: expected a sum");
+        };
+        assert_eq!(
+            sum.aggregation_temporality,
+            AggregationTemporality::Delta as i32,
+            "{label}: temporality"
+        );
+        assert!(sum.is_monotonic, "{label}: monotonic");
+        assert_eq!(double(metric), expected, "{label}: value");
+    }
 }
 
 #[test]
@@ -118,29 +124,28 @@ fn a_gauge_is_not_a_sum() {
 }
 
 #[test]
-fn a_point_without_a_timestamp_is_dated_at_receipt() {
-    let metrics = mapped(r#"{"serviceId":"api","runtime":{"m":{"hu":1.0}}}"#);
-    let expected = at("2026-10-01T12:00:00Z").timestamp_nanos_opt().unwrap() as u64;
-    let metric::Data::Gauge(gauge) = metrics[0].data.as_ref().unwrap() else {
-        panic!("expected a gauge");
-    };
-    assert_eq!(gauge.data_points[0].time_unix_nano, expected);
-}
-
-#[test]
-fn a_metrics_own_timestamp_wins() {
-    let metrics = mapped(
-        r#"{"serviceId":"api","custom":[
+fn a_point_is_dated_by_the_sdk_when_it_can_be_and_at_receipt_otherwise() {
+    let received = at("2026-10-01T12:00:00Z").timestamp_nanos_opt().unwrap() as u64;
+    for (label, payload, expected) in [
+        (
+            "a runtime sample carries no timestamp of its own",
+            r#"{"serviceId":"api","runtime":{"m":{"hu":1.0}}}"#,
+            received,
+        ),
+        (
+            "a metric's own `lu` wins over receipt time",
+            r#"{"serviceId":"api","custom":[
                 {"n":"x","t":"gauge","v":{"default":1},"lu":1759312800000}
             ]}"#,
-    );
-    let metric::Data::Gauge(gauge) = metrics[0].data.as_ref().unwrap() else {
-        panic!("expected a gauge");
-    };
-    assert_eq!(
-        gauge.data_points[0].time_unix_nano,
-        1_759_312_800_000_000_000
-    );
+            1_759_312_800_000_000_000,
+        ),
+    ] {
+        let metrics = mapped(payload);
+        let metric::Data::Gauge(gauge) = metrics[0].data.as_ref().unwrap() else {
+            panic!("{label}: expected a gauge");
+        };
+        assert_eq!(gauge.data_points[0].time_unix_nano, expected, "{label}");
+    }
 }
 
 #[test]

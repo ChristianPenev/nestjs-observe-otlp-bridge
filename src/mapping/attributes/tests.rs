@@ -36,17 +36,19 @@ fn as_string(value: &AnyValue) -> Option<&str> {
 }
 
 #[test]
-fn legacy_convention_keys_are_renamed_forward() {
-    assert_eq!(rename_tag("db.statement"), "db.query.text");
-    assert_eq!(rename_tag("db.system"), "db.system.name");
-    assert_eq!(rename_tag("http.method"), "http.request.method");
-    assert_eq!(rename_tag("http.url"), "url.full");
-}
-
-#[test]
-fn application_tags_are_left_alone() {
-    assert_eq!(rename_tag("tenant.id"), "tenant.id");
-    assert_eq!(rename_tag("db.shard"), "db.shard");
+fn legacy_convention_keys_are_renamed_forward_and_nothing_else_is() {
+    for (from, to) in [
+        ("db.statement", "db.query.text"),
+        ("db.system", "db.system.name"),
+        ("http.method", "http.request.method"),
+        ("http.url", "url.full"),
+        // Application tags are the user's own keys. Renaming them, or hiding
+        // them behind a prefix, would break the dashboards they were added for.
+        ("tenant.id", "tenant.id"),
+        ("db.shard", "db.shard"),
+    ] {
+        assert_eq!(rename_tag(from), to, "rename_tag({from})");
+    }
 }
 
 #[test]
@@ -135,36 +137,29 @@ fn a_derived_convention_outranks_a_colliding_user_tag() {
 }
 
 #[test]
-fn a_collapsed_node_reports_how_many_calls_it_stands_for() {
-    let mut node = span(Component::Pipe);
-    node.collapsed_count = Some(27);
-    let attributes = span_attributes(&node);
-    assert!(matches!(
-        get(&attributes, NESTJS_COLLAPSED_CALLS).unwrap().value,
-        Some(any_value::Value::IntValue(27))
-    ));
-}
-
-#[test]
-fn null_tags_are_dropped_rather_than_emptied() {
-    assert!(to_any_value(&Value::Null).is_none());
-}
-
-#[test]
-fn nested_tags_keep_their_structure() {
-    let value = to_any_value(&json!({"a": [1, 2]})).unwrap();
-    assert!(matches!(
-        value.value,
-        Some(any_value::Value::KvlistValue(_))
-    ));
-}
-
-#[test]
-fn integers_do_not_become_floats() {
-    assert!(matches!(
-        to_any_value(&json!(3)).unwrap().value,
-        Some(any_value::Value::IntValue(3))
-    ));
+fn a_json_tag_keeps_its_type_in_otlp() {
+    // `null` is dropped rather than emptied: OTLP has no null, and a key present
+    // with an empty string reads as a real measurement of nothing.
+    assert!(
+        to_any_value(&Value::Null).is_none(),
+        "null must not become a value at all"
+    );
+    assert!(
+        matches!(
+            to_any_value(&json!(3)).unwrap().value,
+            Some(any_value::Value::IntValue(3))
+        ),
+        "an integer must not arrive as a float"
+    );
+    // Objects and arrays are kept structurally - OTLP models both - so a nested
+    // tag survives instead of being flattened into a string nobody can filter on.
+    assert!(
+        matches!(
+            to_any_value(&json!({"a": [1, 2]})).unwrap().value,
+            Some(any_value::Value::KvlistValue(_))
+        ),
+        "a nested object must keep its structure"
+    );
 }
 
 #[test]

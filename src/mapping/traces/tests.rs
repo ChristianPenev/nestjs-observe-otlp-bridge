@@ -86,15 +86,9 @@ fn every_span_shares_the_operations_trace_id() {
     let trace_id = &spans[0].trace_id;
     assert_eq!(trace_id.len(), 16);
     assert!(spans.iter().all(|span| &span.trace_id == trace_id));
-}
-
-#[test]
-fn a_uuid_trace_id_is_preserved_bit_for_bit() {
-    let spans = mapped(NESTED);
-    assert_eq!(
-        hex::encode(&spans[0].trace_id),
-        "0198f3a12b4c7d8e9f0123456789abcd"
-    );
+    // A UUID trace id is carried through bit for bit, so the same trace can be
+    // found here and in the hosted collector.
+    assert_eq!(hex::encode(trace_id), "0198f3a12b4c7d8e9f0123456789abcd");
 }
 
 #[test]
@@ -108,9 +102,10 @@ fn span_ids_are_unique_and_well_formed() {
 }
 
 #[test]
-fn repeated_calls_to_one_method_become_separate_spans() {
-    // The SDK mints an id per invocation, so two calls to one method are two
-    // spans with two ids.
+fn a_spans_own_id_is_used_so_logs_can_reference_it() {
+    // The SDK mints a UUIDv7 per invocation, so two calls to one method are two
+    // spans with two ids - each derived from its own `s`, which is the value a
+    // log line carries when it names the span that wrote it.
     let payload = r#"{"serviceId":"api","snapshots":[{
             "ti":"t1","p":"http","op":"/x","ct":"2026-10-01T10:00:00.000Z","d":10,
             "t":[{"c":"S","m":"find","o":"auto","s":"01a0f4a1-5d20-7b5c-86b3-200582a1bca1","so":1,"d":2},
@@ -119,19 +114,12 @@ fn repeated_calls_to_one_method_become_separate_spans() {
     let spans = mapped(payload);
     let calls: Vec<_> = spans.iter().filter(|span| span.name == "S.find").collect();
     assert_eq!(calls.len(), 2);
-    assert_ne!(calls[0].span_id, calls[1].span_id);
-}
-
-#[test]
-fn a_spans_own_id_is_used_so_logs_can_reference_it() {
-    let payload = r#"{"serviceId":"api","snapshots":[{
-            "ti":"t1","p":"http","op":"/x","d":10,
-            "t":[{"c":"S","m":"find","o":"auto","s":"01a0f4a1-5d24-74d0-9ae8-316500f03919","d":2}]
-        }]}"#;
-    let spans = mapped(payload);
-    let call = find(&spans, "S.find");
     assert_eq!(
-        call.span_id,
+        calls[0].span_id,
+        ids::span_id_from("01a0f4a1-5d20-7b5c-86b3-200582a1bca1").to_vec()
+    );
+    assert_eq!(
+        calls[1].span_id,
         ids::span_id_from("01a0f4a1-5d24-74d0-9ae8-316500f03919").to_vec()
     );
 }
@@ -248,50 +236,80 @@ fn a_database_span_is_a_client_span_with_db_conventions() {
 }
 
 #[test]
-fn a_thrown_4xx_is_recorded_without_failing_the_span() {
-    // Nest answers "not found" by throwing, so a captured `NotFoundException`
-    // sits on an ordinary 404. Letting it set an error status would make a
-    // service's error rate meaningless.
-    let payload = r#"{"serviceId":"api","snapshots":[{
-            "ti":"t1","p":"http","op":"/users/:id","d":10,"a":{"m":"GET","sc":404},
-            "e":{"cls":"NotFoundException","message":"no such user"}
-        }]}"#;
-    let spans = mapped(payload);
-    assert_eq!(
-        spans[0].status.as_ref().unwrap().code,
-        StatusCode::Unset as i32
-    );
-    // The exception still happened and is still reported.
-    assert_eq!(spans[0].events[0].name, "exception");
-}
+fn root_span_status_follows_the_rule_for_its_protocol() {
+    // For HTTP the response code decides and nothing else. For everything else
+    // the captured error decides, because there is no status code worth
+    // trusting. Either way a captured exception is still recorded as an event.
+    let cases: [(&str, &str, i32, &str, bool); 5] = [
+        (
+            "a 5xx is an error even with nothing thrown",
+            r#"{"serviceId":"api","snapshots":[
+                {"ti":"t1","p":"http","op":"/u","a":{"m":"GET","sc":503}}
+            ]}"#,
+            StatusCode::Error as i32,
+            "",
+            false,
+        ),
+        (
+            "a 4xx is not an error on a server span",
+            r#"{"serviceId":"api","snapshots":[
+                {"ti":"t1","p":"http","op":"/u","a":{"m":"GET","sc":404}}
+            ]}"#,
+            StatusCode::Unset as i32,
+            "",
+            false,
+        ),
+        (
+            // Nest answers "not found" by throwing, so a captured
+            // `NotFoundException` sits on an ordinary 404. Letting it set an
+            // error status would make a service's error rate meaningless.
+            "a thrown 4xx is recorded without failing the span",
+            r#"{"serviceId":"api","snapshots":[{
+                "ti":"t1","p":"http","op":"/users/:id","d":10,"a":{"m":"GET","sc":404},
+                "e":{"cls":"NotFoundException","message":"no such user"}
+            }]}"#,
+            StatusCode::Unset as i32,
+            "",
+            true,
+        ),
+        (
+            // GraphQL answers 200 with an `errors` array, so the transport
+            // status says nothing and the captured error has to decide.
+            "a graphql error fails the span despite a 200",
+            r#"{"serviceId":"api","snapshots":[{
+                "ti":"t1","p":"graphql","op":"Query.orders","d":10,"a":{"m":"POST","sc":200},
+                "e":{"cls":"GraphQLError","message":"boom"}
+            }]}"#,
+            StatusCode::Error as i32,
+            "boom",
+            true,
+        ),
+        (
+            "a failed job is an error even though it has no status code",
+            r#"{"serviceId":"api","jobs":[{
+                "i":"job-1","ti":"t1","q":"email","d":5,
+                "e":{"cls":"Error","message":"smtp down"}
+            }]}"#,
+            StatusCode::Error as i32,
+            "smtp down",
+            true,
+        ),
+    ];
 
-#[test]
-fn a_graphql_error_fails_the_span_despite_a_200() {
-    // GraphQL answers 200 with an `errors` array, so the transport status says
-    // nothing and the captured error has to decide.
-    let payload = r#"{"serviceId":"api","snapshots":[{
-            "ti":"t1","p":"graphql","op":"Query.orders","d":10,"a":{"m":"POST","sc":200},
-            "e":{"cls":"GraphQLError","message":"boom"}
-        }]}"#;
-    let spans = mapped(payload);
-    assert_eq!(
-        spans[0].status.as_ref().unwrap().code,
-        StatusCode::Error as i32
-    );
-}
-
-#[test]
-fn a_failed_job_is_an_error_even_though_it_has_no_status_code() {
-    let payload = r#"{"serviceId":"api","jobs":[{
-            "i":"job-1","ti":"t1","q":"email","d":5,
-            "e":{"cls":"Error","message":"smtp down"}
-        }]}"#;
-    let spans = mapped(payload);
-    assert_eq!(
-        spans[0].status.as_ref().unwrap().code,
-        StatusCode::Error as i32
-    );
-    assert_eq!(spans[0].status.as_ref().unwrap().message, "smtp down");
+    for (label, payload, expected_code, expected_message, expects_event) in cases {
+        let spans = mapped(payload);
+        let status = spans[0].status.as_ref().unwrap();
+        assert_eq!(status.code, expected_code, "{label}: status code");
+        assert_eq!(status.message, expected_message, "{label}: status message");
+        assert_eq!(
+            spans[0]
+                .events
+                .iter()
+                .any(|event| event.name == "exception"),
+            expects_event,
+            "{label}: exception event"
+        );
+    }
 }
 
 #[test]
@@ -322,40 +340,6 @@ fn an_exception_sets_the_status_and_records_an_event() {
 }
 
 #[test]
-fn a_5xx_is_an_error_even_with_nothing_thrown() {
-    let payload = r#"{"serviceId":"api","snapshots":[
-            {"ti":"t1","p":"http","op":"/u","a":{"m":"GET","sc":503}}
-        ]}"#;
-    let spans = mapped(payload);
-    assert_eq!(
-        spans[0].status.as_ref().unwrap().code,
-        StatusCode::Error as i32
-    );
-}
-
-#[test]
-fn a_4xx_is_not_an_error_on_a_server_span() {
-    let payload = r#"{"serviceId":"api","snapshots":[
-            {"ti":"t1","p":"http","op":"/u","a":{"m":"GET","sc":404}}
-        ]}"#;
-    let spans = mapped(payload);
-    assert_eq!(
-        spans[0].status.as_ref().unwrap().code,
-        StatusCode::Unset as i32
-    );
-}
-
-#[test]
-fn a_scheduled_run_is_named_after_its_handler_not_its_timer() {
-    // `rollup interval` would read like a queue called "interval".
-    let payload = r#"{"serviceId":"api","jobs":[
-            {"i":"r1","ti":"t1","n":"rollup","q":"interval","d":5}
-        ]}"#;
-    let spans = mapped(payload);
-    assert_eq!(spans[0].name, "rollup");
-}
-
-#[test]
 fn an_uncaptured_span_failure_still_sets_an_error_status() {
     let payload = r#"{"serviceId":"api","snapshots":[{
             "ti":"t1","p":"http","op":"/u","d":5,
@@ -382,6 +366,14 @@ fn a_job_becomes_a_consumer_span_with_messaging_conventions() {
     assert_eq!(root.name, "send email");
     assert_eq!(root.kind, SpanKind::Consumer as i32);
     assert_eq!(
+        string_attribute(root, attrs::NESTJS_TYPE),
+        Some("queue_consumer")
+    );
+    assert_eq!(
+        string_attribute(root, attrs::MESSAGING_SYSTEM),
+        Some("nestjs_queue")
+    );
+    assert_eq!(
         string_attribute(root, attrs::MESSAGING_DESTINATION_NAME),
         Some("email")
     );
@@ -396,40 +388,51 @@ fn a_job_becomes_a_consumer_span_with_messaging_conventions() {
 }
 
 #[test]
-fn a_scheduled_run_is_not_reported_as_queue_traffic() {
-    // `@nestjs/schedule` puts the scheduler kind where a queue name would go.
-    let payload = r#"{"serviceId":"api","jobs":[{
-            "i":"run-1","ti":"t1","n":"ReportsService.nightly","q":"cron","d":900
-        }]}"#;
-    let spans = mapped(payload);
-    let root = &spans[0];
-    assert_eq!(
-        string_attribute(root, attrs::NESTJS_TYPE),
-        Some("scheduled_task")
-    );
-    assert_eq!(
-        string_attribute(root, attrs::NESTJS_SCHEDULE_KIND),
-        Some("cron")
-    );
-    // A timer firing is not a message, so it must not land in queue views.
-    assert!(string_attribute(root, attrs::MESSAGING_SYSTEM).is_none());
-    assert!(string_attribute(root, attrs::MESSAGING_DESTINATION_NAME).is_none());
-}
-
-#[test]
-fn a_queue_job_is_still_reported_as_messaging() {
-    let payload = r#"{"serviceId":"api","jobs":[
-            {"i":"job-1","ti":"t1","n":"send","q":"email","d":5}
-        ]}"#;
-    let spans = mapped(payload);
-    assert_eq!(
-        string_attribute(&spans[0], attrs::NESTJS_TYPE),
-        Some("queue_consumer")
-    );
-    assert_eq!(
-        string_attribute(&spans[0], attrs::MESSAGING_SYSTEM),
-        Some("nestjs_queue")
-    );
+fn a_scheduled_run_is_named_after_its_handler_and_is_not_queue_traffic() {
+    // `@nestjs/schedule` puts the scheduler kind where a queue name would go, so
+    // naming the span after both would give "rollup interval" - which reads like
+    // a queue called "interval".
+    for (label, payload, expected_name, expected_kind) in [
+        (
+            "interval",
+            r#"{"serviceId":"api","jobs":[
+                {"i":"r1","ti":"t1","n":"rollup","q":"interval","d":5}
+            ]}"#,
+            "rollup",
+            "interval",
+        ),
+        (
+            "cron",
+            r#"{"serviceId":"api","jobs":[
+                {"i":"run-1","ti":"t1","n":"ReportsService.nightly","q":"cron","d":900}
+            ]}"#,
+            "ReportsService.nightly",
+            "cron",
+        ),
+    ] {
+        let spans = mapped(payload);
+        let root = &spans[0];
+        assert_eq!(root.name, expected_name, "{label}: span name");
+        assert_eq!(
+            string_attribute(root, attrs::NESTJS_TYPE),
+            Some("scheduled_task"),
+            "{label}: nestjs.type"
+        );
+        assert_eq!(
+            string_attribute(root, attrs::NESTJS_SCHEDULE_KIND),
+            Some(expected_kind),
+            "{label}: schedule kind"
+        );
+        // A timer firing is not a message, so it must not land in queue views.
+        assert!(
+            string_attribute(root, attrs::MESSAGING_SYSTEM).is_none(),
+            "{label}: messaging.system must be unset"
+        );
+        assert!(
+            string_attribute(root, attrs::MESSAGING_DESTINATION_NAME).is_none(),
+            "{label}: messaging.destination.name must be unset"
+        );
+    }
 }
 
 #[test]
