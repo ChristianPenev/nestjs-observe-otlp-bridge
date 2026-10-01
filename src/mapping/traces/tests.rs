@@ -451,6 +451,115 @@ fn a_job_enqueued_by_a_request_joins_that_request_trace() {
 }
 
 #[test]
+fn a_non_http_transport_sets_only_the_conventions_it_owns() {
+    // `root_attributes` has one arm per protocol, so the failure worth catching is
+    // a transport falling through to the wrong arm - an RPC message picking up
+    // `http.route`, or a gateway picking up `rpc.*`. Each row therefore asserts
+    // both what the transport does set and what it must not.
+    struct Case {
+        label: &'static str,
+        payload: &'static str,
+        name: &'static str,
+        protocol: &'static str,
+        rpc_system: Option<&'static str>,
+        rpc_method: Option<&'static str>,
+        url_path: Option<&'static str>,
+    }
+
+    let cases = [
+        Case {
+            // A Nest microservice pattern. `rpc.system` has no registered value
+            // for Nest's own transports, so the namespaced one is used rather
+            // than claiming a system the conventions define differently.
+            label: "an rpc message",
+            payload: r#"{"serviceId":"api","snapshots":[
+                {"ti":"t1","p":"rpc","op":"orders.created","d":10}
+            ]}"#,
+            name: "orders.created",
+            protocol: "rpc",
+            rpc_system: Some("nestjs_microservice"),
+            rpc_method: Some("orders.created"),
+            url_path: None,
+        },
+        Case {
+            // gRPC is a registered `rpc.system` value, so it is reported as itself.
+            label: "a grpc call",
+            payload: r#"{"serviceId":"api","snapshots":[
+                {"ti":"t1","p":"grpc","op":"/orders.Orders/Get","d":10}
+            ]}"#,
+            name: "/orders.Orders/Get",
+            protocol: "grpc",
+            rpc_system: Some("grpc"),
+            rpc_method: Some("/orders.Orders/Get"),
+            url_path: None,
+        },
+        Case {
+            // The SDK sends `gateway:pattern` as the operation id for a gateway
+            // handler. OpenTelemetry has no WebSocket conventions, so the transport
+            // URL is all there is to record under a standard key.
+            label: "a websocket message",
+            payload: r#"{"serviceId":"api","snapshots":[
+                {"ti":"t1","p":"ws","op":"chat:message","d":10,"a":{"ou":"/socket.io"}}
+            ]}"#,
+            name: "chat:message",
+            protocol: "ws",
+            rpc_system: None,
+            rpc_method: None,
+            url_path: Some("/socket.io"),
+        },
+    ];
+
+    for case in cases {
+        let spans = mapped(case.payload);
+        let root = &spans[0];
+        let label = case.label;
+
+        assert_eq!(root.name, case.name, "{label}: root span name");
+        assert_eq!(root.kind, SpanKind::Server as i32, "{label}: span kind");
+        assert_eq!(
+            string_attribute(root, attrs::NESTJS_PROTOCOL),
+            Some(case.protocol),
+            "{label}: nestjs.protocol"
+        );
+        assert_eq!(
+            string_attribute(root, attrs::NESTJS_OPERATION_ID),
+            Some(case.name),
+            "{label}: nestjs.operation.id"
+        );
+        assert_eq!(
+            string_attribute(root, attrs::RPC_SYSTEM),
+            case.rpc_system,
+            "{label}: rpc.system"
+        );
+        assert_eq!(
+            string_attribute(root, attrs::RPC_METHOD),
+            case.rpc_method,
+            "{label}: rpc.method"
+        );
+        assert_eq!(
+            string_attribute(root, attrs::URL_PATH),
+            case.url_path,
+            "{label}: url.path"
+        );
+
+        // None of these is HTTP, so the HTTP conventions must stay off the span -
+        // a backend keys its request views off exactly these.
+        assert!(
+            string_attribute(root, attrs::HTTP_ROUTE).is_none(),
+            "{label}: http.route must not be set"
+        );
+        assert!(
+            string_attribute(root, attrs::HTTP_REQUEST_METHOD).is_none(),
+            "{label}: http.request.method must not be set"
+        );
+        assert!(
+            attribute(root, attrs::HTTP_RESPONSE_STATUS_CODE).is_none(),
+            "{label}: http.response.status_code must not be set"
+        );
+    }
+}
+
+#[test]
 fn graphql_records_its_document_and_operation() {
     let payload = r#"{"serviceId":"api","snapshots":[{
             "ti":"t1","p":"graphql","op":"Query.orders","d":10,
