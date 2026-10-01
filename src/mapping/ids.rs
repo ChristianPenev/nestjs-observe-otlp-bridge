@@ -1,31 +1,14 @@
 //! Turning Observe identifiers into OTLP ones.
 //!
-//! OTLP requires a 16-byte trace id and an 8-byte span id, both non-zero. Observe
-//! guarantees neither, so this module is where the gap is closed - and it is the
-//! part of the bridge most worth understanding before trusting a waterfall.
+//! OTLP wants a 16-byte trace id and an 8-byte span id, both non-zero; Observe
+//! guarantees neither. A UUID keeps its own bytes, anything else is hashed, and a
+//! span that arrived without an `s` of its own falls back to its position in the
+//! tree. Hashing is a pure function of the id, so two services that saw the same
+//! `x-request-id` land on the same trace - the point of the SDK propagating it.
 //!
-//! **Trace ids.** `ti` is a UUIDv7 when the agent minted it, but an inbound
-//! `x-request-id` is adopted verbatim whenever it matches
-//! `^[A-Za-z0-9._:-]{1,128}$`, so it can be any short token. A UUID is used for its
-//! own 16 bytes, which keeps the id recognisable in the backend and identical to
-//! what the hosted collector would have stored. Anything else is hashed. Both paths
-//! are pure functions of the id, so two services that saw the same `x-request-id`
-//! land on the same OTLP trace id and their spans join up - which is the whole
-//! point of the SDK propagating it.
-//!
-//! **Span ids.** Observe sends a UUIDv7 per invocation in `s`, which is hashed down
-//! to the 8 bytes OTLP wants. Hashed rather than truncated so the derivation is the
-//! same one used for a non-UUID id, and so log records - whose `spanId` carries the
-//! same value - land on exactly the same bytes and link to the span that wrote them.
-//!
-//! `s` is documented as optional, and a span that arrives without one still needs an
-//! id, so there is a fallback: the node's *position*, as the path of child indices
-//! from the root. That is unique within a trace by construction. It is strictly
-//! worse than the real id - it moves if the tree's shape changes between batches,
-//! and nothing else can reference it - so it is only ever a fallback.
-//!
-//! Both paths are deterministic, so re-exporting a batch reproduces the same tree
-//! rather than a duplicate one with fresh ids.
+//! Every derivation is deterministic, so re-exporting a batch reproduces the same
+//! tree rather than a duplicate with fresh ids. `docs/mapping.md` §Identifiers has
+//! the reasoning in full.
 
 use sha2::{Digest, Sha256};
 
@@ -37,9 +20,8 @@ const SPAN_DOMAIN: &[u8] = b"nestjs-observe-oss/span-id\0";
 /// A 16-byte OTLP trace id for an Observe `ti`.
 ///
 /// A UUID contributes its own bytes; anything else is hashed under a domain
-/// separator. An all-zero result is invalid per the spec, so it is nudged - only
-/// reachable from the nil UUID, which no generator produces but a hand-written
-/// `x-request-id` can carry.
+/// separator. An all-zero result is invalid, so it is nudged - reachable only from
+/// the nil UUID, which a hand-written `x-request-id` can carry.
 pub fn trace_id(observe_trace_id: &str) -> [u8; 16] {
     let bytes = match parse_uuid(observe_trace_id) {
         Some(uuid) => uuid,
@@ -58,10 +40,8 @@ pub fn trace_id(observe_trace_id: &str) -> [u8; 16] {
 
 /// An 8-byte OTLP span id for an Observe span id.
 ///
-/// The SDK sends a UUIDv7 per invocation, and log records reference the same value,
-/// so this is what makes a log line link to the exact call that wrote it. Hashing
-/// rather than truncating keeps one derivation for every id shape and avoids
-/// depending on which half of a UUIDv7 carries its entropy.
+/// Log records carry the same value, so this is what links a log line to the call
+/// that wrote it. Hashed rather than truncated: one derivation for every id shape.
 pub fn span_id_from(observe_span_id: &str) -> [u8; 8] {
     let digest = Sha256::new()
         .chain_update(SPAN_DOMAIN)
@@ -74,10 +54,9 @@ pub fn span_id_from(observe_span_id: &str) -> [u8; 8] {
 
 /// An 8-byte OTLP span id for the node at `path` within `observe_trace_id`.
 ///
-/// The fallback, for a span that arrived without an id of its own. `path` is the
-/// sequence of child indices walked from the root of the snapshot's span forest -
-/// `[0]` is the first root, `[0, 2]` its third child - which is unique within a
-/// trace by construction.
+/// The fallback for a span with no id of its own. `path` is the child-index route
+/// from the root - `[0, 2]` is the first root's third child - unique within a trace
+/// by construction.
 pub fn span_id_at(observe_trace_id: &str, path: &[usize]) -> [u8; 8] {
     let mut hasher = Sha256::new();
     hasher.update(SPAN_DOMAIN);
@@ -95,11 +74,9 @@ pub fn span_id_at(observe_trace_id: &str, path: &[usize]) -> [u8; 8] {
 
 /// Parses a UUID, with or without dashes, into its 16 bytes.
 ///
-/// Hand-rolled rather than delegated: this must accept exactly the canonical
-/// 8-4-4-4-12 form and the bare 32-hex form and reject everything else, so that an
-/// `x-request-id` which merely looks uuid-ish takes the hashing path instead of
-/// being half-parsed. Version and variant bits are not checked - a v4 id, a v7 id
-/// and a customer's own UUID are all equally usable as 16 bytes.
+/// Hand-rolled so it accepts exactly the 8-4-4-4-12 and bare-32-hex forms and rejects
+/// everything else - an `x-request-id` that merely looks uuid-ish must take the
+/// hashing path. Version and variant bits are not checked.
 fn parse_uuid(value: &str) -> Option<[u8; 16]> {
     let mut nibbles = [0u8; 32];
     let mut seen = 0usize;

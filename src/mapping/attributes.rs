@@ -1,19 +1,12 @@
 //! The attribute scheme, in one place.
 //!
-//! Two rules decide where anything lands, and `docs/mapping.md` is generated from
-//! the same names:
+//! Two rules: use OpenTelemetry's name where a convention exists, otherwise
+//! `nestjs.*`, and nothing else invents a namespace. The SDK emits outgoing-call tags
+//! under superseded names (`db.statement`, `http.method`), so those are translated
+//! forward - a backend's built-in views key off the current ones.
 //!
-//! 1. If OpenTelemetry has a convention for it, use the convention's name. The SDK
-//!    emits its outgoing-call tags under *older* semantic-convention names
-//!    (`db.statement`, `http.method`, `http.url`) which have since been renamed, so
-//!    those are translated forward here rather than passed through - a backend's
-//!    built-in database and HTTP views key off the current names.
-//! 2. If it is a Nest concept OpenTelemetry has no word for, put it under `nestjs.*`.
-//!    Nothing else invents a namespace.
-//!
-//! Application tags are passed through untouched. They are the user's own keys and
-//! renaming them, or hiding them behind a prefix, would break the dashboards they
-//! were added for.
+//! Application tags pass through untouched: they are the user's keys, and renaming
+//! them would break the dashboards they were added for. See `docs/mapping.md`.
 
 use opentelemetry_proto::tonic::common::v1::{AnyValue, ArrayValue, KeyValue, any_value};
 use serde_json::Value;
@@ -113,9 +106,8 @@ pub fn rename_tag(key: &str) -> &str {
 
 /// Accumulates attributes, keeping the last write for a key.
 ///
-/// Last-write-wins matters: application tags are applied first and the conventions
-/// derived from structured fields afterwards, so a user tag called `http.route`
-/// cannot displace the route the framework actually matched.
+/// Application tags are applied first and derived conventions after, so a user tag
+/// called `http.route` cannot displace the route the framework matched.
 #[derive(Default)]
 pub struct AttributeBuilder {
     entries: Vec<KeyValue>,
@@ -192,10 +184,8 @@ impl AttributeBuilder {
 
 /// Builds a `KeyValue`, leaving `key_strindex` unset.
 ///
-/// That field belongs to the Profiling signal and interns the key into a dictionary
-/// this bridge does not send. The spec tells receivers to treat it as a non-fatal
-/// oddity on other signals, but setting it alongside `key` is explicitly disallowed,
-/// so every attribute is built here rather than by hand.
+/// That field belongs to the Profiling signal, and setting it alongside `key` is
+/// explicitly disallowed - so every attribute is built here rather than by hand.
 pub fn key_value(key: impl Into<String>, value: AnyValue) -> KeyValue {
     KeyValue {
         key: key.into(),
@@ -231,10 +221,9 @@ pub fn bool_value(value: bool) -> AnyValue {
 
 /// Converts a JSON tag value into an OTLP one.
 ///
-/// `null` returns `None` rather than an empty value: OTLP has no null, and a key
-/// present with an empty string reads as a real measurement of nothing. Objects and
-/// arrays are kept structurally - OTLP models both - so a nested tag survives instead
-/// of being flattened into a string a backend cannot filter on.
+/// `null` returns `None`: OTLP has no null, and an empty string reads as a real
+/// measurement of nothing. Objects and arrays keep their structure, so a nested tag
+/// stays filterable.
 pub fn to_any_value(value: &Value) -> Option<AnyValue> {
     let inner = match value {
         Value::Null => return None,
@@ -264,10 +253,9 @@ pub fn to_any_value(value: &Value) -> Option<AnyValue> {
 
 /// The attributes for an operation's synthesized root span.
 ///
-/// The protocol decides which conventions apply, and each arm sets only what that
-/// transport actually defines - an RPC message has no route, a timer firing has no
-/// queue. Application tags go on first so a user tag cannot displace a convention
-/// derived from a structured field.
+/// Each protocol arm sets only what that transport defines - an RPC message has no
+/// route, a timer has no queue. Application tags go on first so a user tag cannot
+/// displace a convention derived from a structured field.
 pub fn root_attributes(operation: &Operation) -> Vec<KeyValue> {
     let mut builder = AttributeBuilder::new();
     builder.tags(&operation.tags);
@@ -289,10 +277,8 @@ pub fn root_attributes(operation: &Operation) -> Vec<KeyValue> {
                 }
                 Protocol::GraphQl => {
                     builder.maybe_str(GRAPHQL_OPERATION_NAME, request.operation_id.clone());
-                    // For GraphQL the SDK puts the sanitized document where a URL
-                    // would go, so it is the document that is recorded - under both
-                    // the convention's key and the `nestjs.*` one, since the
-                    // convention is still experimental.
+                    // The SDK puts the sanitized document where a URL would go.
+                    // Recorded under both keys, the convention being experimental.
                     if let Some(document) = &request.original_url {
                         builder.str(GRAPHQL_DOCUMENT, document.clone());
                         builder.str(NESTJS_GRAPHQL_DOCUMENT, document.clone());

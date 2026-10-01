@@ -1,16 +1,11 @@
 //! Observe operations into OTLP spans.
 //!
-//! Each operation becomes a tree: a synthesized root span for the entry point - the
-//! request, the job - with the SDK's span forest beneath it. The root is synthesized
-//! because Observe does not send one; a snapshot *is* the root, carrying the route,
-//! status and duration as fields of its own, while `t` holds only the calls made
-//! underneath it.
+//! The root span is synthesized, because Observe sends no root: the snapshot *is*
+//! one, carrying the route, status and duration, while `t` holds only the calls made
+//! beneath it.
 //!
-//! Timing is reconstructed rather than read. The only absolute timestamp on the wire
-//! is the snapshot's `calledAt` - the SDK deletes `startTimestamp` before encoding -
-//! and every span underneath carries `so`, its offset in milliseconds from the start
-//! of the operation. So a span's start is `calledAt + so`, and its end is that plus
-//! `d`.
+//! Timing is reconstructed, not read. `calledAt` is the only absolute timestamp on
+//! the wire, so a span starts at `calledAt + so` and ends that plus `d`.
 
 use chrono::{DateTime, Utc};
 use opentelemetry_proto::tonic::common::v1::InstrumentationScope;
@@ -32,9 +27,8 @@ const SERVER_ERROR_FLOOR: i64 = 500;
 
 /// Builds the `ResourceSpans` for a batch.
 ///
-/// `received_at` stands in for any operation the SDK sent without a `calledAt`.
-/// Dropping those would lose real traces; dating them at receipt is off by at most
-/// one flush interval, and the batch is the only clock available.
+/// `received_at` stands in for an operation sent without a `calledAt`. Dropping those
+/// would lose real traces; receipt time is off by at most one flush interval.
 pub fn map(batch: &Batch, received_at: DateTime<Utc>) -> Option<ResourceSpans> {
     let spans: Vec<OtlpSpan> = batch
         .operations
@@ -124,9 +118,8 @@ fn map_operation(operation: &Operation, received_at: DateTime<Utc>) -> Vec<OtlpS
 
 /// The state carried down a span tree while it is being translated.
 ///
-/// Everything here is fixed for one operation except `seen` and `out`, which
-/// accumulate. Bundled rather than passed as eight parameters, so recursing reads as
-/// "visit this child" instead of restating the whole context at each level.
+/// Bundled rather than passed as eight parameters, so recursing reads as "visit this
+/// child" instead of restating the whole context at each level.
 struct Walk<'a> {
     trace_id: &'a [u8],
     observe_trace_id: &'a str,
@@ -143,13 +136,9 @@ impl Walk<'_> {
     /// `path` is the child-index route from the root, used only as a fallback id
     /// for a span that arrived without one of its own.
     fn visit(&mut self, span: &Span, parent_id: &[u8], path: &mut Vec<usize>) {
-        // The span's own id when it sent one, so a log line naming it links to
-        // exactly this span; its position otherwise.
-        //
-        // The `seen` check is a guard, not an expectation: the SDK mints a UUIDv7
-        // per invocation, so ids are unique in practice. But two spans sharing one
-        // would make the parent of everything below them ambiguous and quietly
-        // corrupt the waterfall, and falling back to position avoids that.
+        // The span's own id when it sent one, so a log line naming it links here;
+        // its position otherwise. `seen` is a guard, not an expectation: two spans
+        // sharing an id would make everything below them ambiguously parented.
         let span_id = match span.observe_span_id.as_deref() {
             Some(id) => {
                 let derived = ids::span_id_from(id);
@@ -211,17 +200,12 @@ fn span_kind(span: &Span) -> SpanKind {
 
 /// The root span's status.
 ///
-/// For an **HTTP** request the response code decides, and nothing else: the HTTP
-/// conventions say a server span is an error only on 5xx. That rule matters more in
-/// a Nest application than in most, because Nest answers "not found", "forbidden"
-/// and "invalid input" by *throwing* - so a captured `NotFoundException` sits on a
-/// perfectly ordinary 404. Letting the exception decide would mark every such
-/// request failed and make a service's error rate meaningless. The exception is
-/// still recorded as an event either way; only the status is withheld.
+/// For HTTP the response code decides, alone: Nest answers "not found" by *throwing*,
+/// so letting the exception decide would mark every 404 a failure and make a
+/// service's error rate meaningless. The exception is still recorded as an event.
 ///
-/// For **everything else** the error decides, because there is no status code worth
-/// trusting. A GraphQL operation answers 200 with an `errors` array, and jobs and
-/// RPC messages have no status of their own.
+/// Everything else has no status code worth trusting - GraphQL answers 200 with an
+/// `errors` array - so the captured error decides.
 fn root_status(operation: &Operation) -> Status {
     let error_status = || Status {
         code: StatusCode::Error as i32,
@@ -292,8 +276,8 @@ fn error_message(error: &ErrorInfo) -> String {
 
 /// The `exception` event for a captured error.
 ///
-/// Recorded at the span's end, which is the closest the wire allows: the SDK sends
-/// no timestamp with an error, only the span it belonged to.
+/// Dated at the span's end - the SDK sends no timestamp with an error, only the span
+/// it belonged to.
 fn error_events(error: Option<&ErrorInfo>, end_nanos: u64) -> Vec<Event> {
     let Some(error) = error else {
         return Vec::new();
@@ -312,9 +296,8 @@ fn to_nanos(timestamp: DateTime<Utc>) -> u64 {
 
 /// Milliseconds to nanoseconds, saturating at zero.
 ///
-/// A negative duration is nonsense the wire permits; clamping keeps it from
-/// wrapping into an enormous unsigned value and producing a span that appears to
-/// last centuries.
+/// A negative duration is nonsense the wire permits; clamping stops it wrapping into
+/// a span that appears to last centuries.
 fn millis_to_nanos(millis: f64) -> u64 {
     if !millis.is_finite() || millis <= 0.0 {
         return 0;

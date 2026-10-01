@@ -1,10 +1,9 @@
 //! Observe metrics into OTLP metrics.
 //!
-//! Counters are exported with **delta** temporality. Both kinds of counter the SDK
-//! sends are already deltas: the runtime GC figures are zeroed after every
-//! collection window, and a custom counter's `increase` is what it rose by since the
-//! last successful flush. Declaring them cumulative would make a backend read each
-//! window's figure as a running total that keeps falling back to near zero.
+//! Counters are **delta** temporality, because both kinds the SDK sends already are:
+//! GC figures are zeroed every collection window, and a custom counter's `increase`
+//! is what it rose by since the last flush. Calling them cumulative would make a
+//! backend read each window as a running total that keeps collapsing to zero.
 //!
 //! Gauges carry no temporality, so nothing has to be decided for them.
 

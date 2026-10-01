@@ -1,14 +1,10 @@
 //! Observe log records into OTLP `LogRecord`s.
 //!
-//! Both correlation ids carry across. The SDK stamps each line with the trace it
-//! belongs to and the id of the span that wrote it, and both go through the same
-//! derivation the trace mapper uses - so "logs for this trace" and "logs for this
-//! span" both work in the backend.
+//! Both correlation ids carry across, through the same derivations the trace mapper
+//! uses, so "logs for this trace" and "logs for this span" both work.
 //!
-//! A span id that names a span in a batch that has not arrived yet, or has already
-//! gone, still exports. Logs and traces flush independently, so a dangling link is
-//! normal and transient; dropping the id to avoid one would break the common case
-//! to tidy the rare one.
+//! A link to a span outside this batch still exports. Logs and traces flush
+//! independently, so a dangling link is normal and transient.
 
 use chrono::{DateTime, Utc};
 use opentelemetry_proto::tonic::logs::v1::{LogRecord as OtlpLogRecord, ResourceLogs, ScopeLogs};

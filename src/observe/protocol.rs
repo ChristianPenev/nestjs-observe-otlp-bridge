@@ -1,24 +1,18 @@
 //! The `@nestjs/observe` wire format, transcribed from the SDK's own encoders.
 //!
-//! Every field below is a single-letter key the SDK's `src/encoders/*` map onto,
-//! cross-checked against `agent/telemetry-wire-contract.js` - the SDK's hand-written
-//! copy of the agreement it has with the hosted collector. Both were read from
-//! `@nestjs/observe@0.3.5`; `docs/protocol.md` records the provenance of each key.
+//! Read from `@nestjs/observe@0.3.5`: the `src/encoders/*` key maps, cross-checked
+//! against the SDK's own `agent/telemetry-wire-contract.js`. `docs/protocol.md`
+//! records the provenance of each key.
 //!
-//! The single-letter keys are scoped to their section and collide across sections:
-//! `JobSnapshot::c` is `calledAt` and `JobSnapshot::s` is `status`, while on a
-//! `TraceNode` those same letters mean `className` and `spanId`. The two must never
-//! share a struct.
+//! Where source and output disagree these types follow the **output**, captured from
+//! a real application (`tests/fixtures`). Three fields differ from what the contract
+//! declares, each noted where it is defined.
 //!
-//! Where the SDK's source and its output disagree, these types follow the output,
-//! captured from a real application - see `tests/fixtures`. Three places differ from
-//! what `telemetry-wire-contract.js` declares, and each is noted on the field:
-//! `GcBreakdown`'s buckets, `CustomMetric::value` and `CustomMetric::increase`.
+//! Single-letter keys are scoped to their section and collide across sections:
+//! `JobSnapshot::s` is `status`, `TraceNode::s` is `spanId`. Never share a struct.
 
-// This module is a complete transcription of the wire contract, not only the part
-// the mapper happens to read. A field with no OTLP counterpart - `forwardLogs`, the
-// objective declarations - is still part of the record of what 0.3.5 sends, and
-// deleting it would make the next SDK diff harder to read, not easier.
+// A complete transcription, not only the part the mapper reads: a field with no OTLP
+// counterpart is still part of the record of what 0.3.5 sends.
 #![allow(dead_code)]
 
 use serde::Deserialize;
@@ -273,12 +267,9 @@ pub struct GcBreakdown {
 
 /// One collection kind's contribution to a window.
 ///
-/// Accepts both shapes the SDK could send. `telemetry-wire-contract.js` declares
-/// these as plain numbers, but `NodeRuntimeMetricsService` accumulates
-/// `{ count, duration }` objects and the encoder copies them across untouched - so
-/// 0.3.5 puts an object on the wire where its own contract expects a number. The
-/// richer shape is read when it arrives and a bare number is still accepted, so this
-/// keeps working whichever side is eventually corrected.
+/// Accepts both shapes. The contract declares a number, but
+/// `NodeRuntimeMetricsService` accumulates `{ count, duration }` objects and the
+/// encoder copies them across - so 0.3.5 contradicts its own contract here.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum GcBucket {
@@ -325,11 +316,9 @@ pub struct CustomMetric {
     pub metric_type: Option<String>,
     /// The current reading *per label set*, not a single number.
     ///
-    /// `telemetry-wire-contract.js` declares this a number, but `Counter` and
-    /// `Gauge` both hold `{ [stringifiedLabel]: number }` and the encoder copies it
-    /// across untouched - an unlabelled metric arrives as `{"default": 42}`. Typing
-    /// this `f64` made serde reject the whole batch over one custom metric, so it is
-    /// read as a value and flattened by the decoder.
+    /// The contract declares a number, but `Counter` and `Gauge` hold
+    /// `{ [stringifiedLabel]: number }`. Typing this `f64` made serde reject the
+    /// whole batch over one custom metric.
     #[serde(rename = "v", default)]
     pub value: Option<Value>,
     #[serde(rename = "tg", default)]

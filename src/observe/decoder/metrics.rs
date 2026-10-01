@@ -1,11 +1,9 @@
 //! The metric half of decoding.
 //!
-//! Observe sends measurements in two unrelated shapes: `runtime` is one nested
-//! object the agent samples on a timer, and `custom` is a list of records the
-//! application declared, each with its own per-label series. OTLP wants neither - it
-//! wants one stream per measurement - so both are flattened here, into the same
-//! `Metric`. Doing it at decode time is what keeps `mapping::metrics` from having to
-//! know which section a number arrived in.
+//! Two unrelated shapes arrive: `runtime` is one nested object sampled on a timer,
+//! `custom` a list of records with per-label series. OTLP wants one stream per
+//! measurement, so both are flattened into the same `Metric` here - which is what
+//! keeps `mapping::metrics` from having to know which section a number came from.
 
 use serde_json::Value;
 
@@ -15,10 +13,9 @@ use crate::observe::protocol;
 
 /// Splits the nested runtime object into one stream per measurement.
 ///
-/// The counters here - GC count and duration - are *deltas*: the SDK zeroes them
-/// after every collection window, so they must be exported with delta temporality
-/// rather than as cumulative totals, or a backend will read each window's figure as
-/// a running total that keeps resetting.
+/// The GC counters are *deltas* - the SDK zeroes them after every collection window -
+/// so they must carry delta temporality, or each window reads as a running total
+/// that keeps resetting.
 pub(super) fn push_runtime_metrics(runtime: &protocol::RuntimeMetrics, out: &mut Vec<Metric>) {
     let gauge = |name: &str, unit: Option<&'static str>, value: Option<f64>| {
         value.map(|value| Metric {
@@ -152,20 +149,12 @@ pub(super) fn push_runtime_metrics(runtime: &protocol::RuntimeMetrics, out: &mut
 
 /// Turns one application metric into one or more streams.
 ///
-/// Every value the SDK sends for a custom metric is a map of label set to number -
-/// even an unlabelled one, which arrives as `{"default": 42}` - so each field can
-/// expand into several points.
+/// Every value is a map of label set to number - an unlabelled one arrives as
+/// `{"default": 42}` - so one field can expand into several points.
 ///
-/// A counter is exported from `increase` rather than `value`. `value` is the
-/// cumulative total held in the application's own memory, which resets to zero when
-/// the process restarts; `increase` is what that total rose by since the last
-/// successful flush, which is exactly a delta sum and is additive across instances.
-/// The SDK computes it for this reason and only advances its baseline once a flush
-/// has actually been written.
-///
-/// A summary becomes one gauge per quantile. OTLP has a summary point type, but it
-/// is legacy and thinly supported, and a `quantile` attribute is what a backend can
-/// actually chart.
+/// A counter is exported from `increase`, not `value`: `value` is the in-memory
+/// total that resets on restart, `increase` is the delta since the last flush. A
+/// summary becomes one gauge per quantile, since OTLP's summary point is legacy.
 pub(super) fn push_custom_metric(metric: protocol::CustomMetric, out: &mut Vec<Metric>) {
     let mut base = to_attributes(metric.tags);
     // `l` is the metric's *declared* label names, not values. Only useful as
@@ -257,12 +246,9 @@ pub(super) fn push_custom_metric(metric: protocol::CustomMetric, out: &mut Vec<M
 
 /// Reads one metric field into its individual series.
 ///
-/// The SDK keys each series by `stringifyLabel` - `JSON.stringify` of the label
-/// object with its keys sorted - and uses the literal `"default"` for a metric with
-/// no labels. Both are decoded here: a JSON object key becomes real attributes, so
-/// `{"route":"/login"}` arrives in the backend as a filterable `route` attribute
-/// rather than as a string nobody can group by. A bare number is also accepted, in
-/// case the shape is ever corrected to match the SDK's own contract.
+/// The SDK keys each series by `JSON.stringify` of the sorted label object, or the
+/// literal `"default"` when unlabelled. The object key becomes real attributes, so
+/// `{"route":"/login"}` is filterable rather than an opaque string.
 fn flatten_series(value: &Value) -> Vec<(Attributes, f64)> {
     match value {
         Value::Number(number) => number
@@ -279,9 +265,8 @@ fn flatten_series(value: &Value) -> Vec<(Attributes, f64)> {
 
 /// Turns a series key back into attributes.
 ///
-/// Anything that is not a JSON object - `"default"`, or a key from some future
-/// encoding - yields no attributes rather than a made-up one. For `"default"` that
-/// is exactly right: it means the metric was never labelled.
+/// Anything that is not a JSON object - `"default"`, or a future encoding - yields no
+/// attributes rather than a made-up one.
 fn parse_label_key(key: &str) -> Attributes {
     if key == "default" {
         return Attributes::new();

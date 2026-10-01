@@ -1,8 +1,7 @@
 //! Configuration, entirely from the environment.
 //!
-//! Nothing here knows about a particular backend. Grafana Cloud, Better Stack,
-//! SigNoz, Honeycomb, Datadog and New Relic all differ only in their endpoint and
-//! the headers they want, so both are free-form and neither is special-cased.
+//! Nothing here knows about a particular backend: they differ only in endpoint and
+//! headers, so both are free-form and neither is special-cased.
 
 use std::collections::HashMap;
 use std::env;
@@ -41,9 +40,8 @@ pub struct OtlpConfig {
 impl OtlpConfig {
     /// The URL for one signal.
     ///
-    /// OTLP/HTTP appends `/v1/traces`, `/v1/logs` or `/v1/metrics` to the base, and
-    /// a trailing slash on the base would produce a double slash that some
-    /// receivers route differently.
+    /// OTLP/HTTP appends `/v1/traces` and friends to the base, so a trailing slash
+    /// would produce a double slash that some receivers route differently.
     pub fn signal_url(&self, signal: Signal) -> String {
         format!("{}/{}", self.endpoint.trim_end_matches('/'), signal.path())
     }
@@ -181,9 +179,8 @@ fn parse_protocol(value: Option<&str>) -> Result<OtlpProtocol, ConfigError> {
 /// Parses `OTLP_HEADERS`, in the W3C Baggage form the OTel spec uses:
 /// `key1=value1,key2=value2`.
 ///
-/// A value may itself contain `=` - a bearer token or a base64 credential often
-/// does - so only the first one separates the pair. Commas cannot appear in a value;
-/// that is the spec's limitation, not this one's.
+/// Only the first `=` separates a pair, since a bearer token often contains one.
+/// Commas cannot appear in a value; that is the spec's limitation, not this one's.
 fn parse_headers(value: Option<&str>) -> HashMap<String, String> {
     let Some(value) = value else {
         return HashMap::new();

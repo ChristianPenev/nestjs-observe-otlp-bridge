@@ -1,26 +1,13 @@
 //! The HTTP surface the `@nestjs/observe` agent talks to.
 //!
 //! The agent POSTs a gzipped JSON batch to `{endpoint}/applications/telemetry` with
-//! `x-api-key` and `x-api-secret` headers, and reads the response body looking for
-//! `{"degraded": true}`. Everything this module does is shaped by what the agent
-//! does with each answer, which is why the status codes below are chosen rather than
-//! generic:
+//! `x-api-key` and `x-api-secret`, and reads the response looking for
+//! `{"degraded": true}`. The status codes here are picked for what the agent does
+//! with each - a 401 stops it reporting until restart, a 400 makes it re-send once,
+//! a 429 would pause it for `Retry-After`. See `docs/protocol.md` §Responses.
 //!
-//! - **200** - accepted. The body must be JSON, or the agent's `response.json()`
-//!   fails; it treats that as absent and carries on, but there is no reason to make
-//!   it guess.
-//! - **400** - the agent strips what the contract refuses, drops unsalvageable
-//!   entries and re-sends *once*. Only worth returning for a body that is genuinely
-//!   malformed.
-//! - **401/403** - the agent stops reporting and does not recover without a restart,
-//!   because it reads credentials once at start-up. Returned only when this bridge
-//!   was configured with credentials and they did not match.
-//! - **429** - the agent pauses for `Retry-After` and drops everything in the
-//!   meantime. Never returned: the bridge has no quota.
-//!
-//! An export failure answers **502** rather than 200. The agent logs it and drops
-//! the batch either way, but a 200 would report success for telemetry that never
-//! arrived, and the operator would have nothing to go on.
+//! An export failure answers **502**, never 200: a 200 would report success for
+//! telemetry that never arrived.
 
 use axum::{
     Json, Router,
@@ -149,11 +136,9 @@ async fn ingest(State(state): State<Arc<AppState>>, headers: HeaderMap, body: By
 
 /// The success body.
 ///
-/// `degraded` is the field the agent looks for; it is what the hosted collector sets
-/// when it is accepting batches while discarding their spans. This bridge never
-/// discards, so it is always false - but it is sent explicitly rather than omitted,
-/// because a missing field and `false` mean the same thing to the agent only by
-/// accident of how it parses.
+/// `degraded` is the field the agent looks for. This bridge never discards, so it is
+/// always false - sent explicitly rather than omitted, since the agent treats a
+/// missing field as false only by accident of how it parses.
 fn accepted() -> Response {
     (
         StatusCode::OK,
@@ -164,11 +149,8 @@ fn accepted() -> Response {
 
 /// Whether the agent presented the configured credentials.
 ///
-/// Compared in full rather than short-circuiting on the first difference. The
-/// comparison is not constant-time in any rigorous sense - it is a `==` on strings
-/// of possibly different lengths - but the credentials are a deployment's own shared
-/// secret between two of its processes, not a user-facing password, and the
-/// alternative was a dependency for a threat that does not apply here.
+/// Not constant-time: these are a deployment's shared secret between two of its own
+/// processes, not a user-facing password.
 fn credentials_match(headers: &HeaderMap, expected: &IngestAuth) -> bool {
     let header = |name: &str| {
         headers

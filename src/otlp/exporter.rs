@@ -1,11 +1,8 @@
 //! Shipping OTLP over HTTP.
 //!
-//! Deliberately thin. There is no queue, no retry and no buffer: the bridge is
-//! stateless, and a failed export is reported rather than held. That is the right
-//! trade for a translation layer that sits in front of a real collector - the
-//! collector is where buffering, retry and backpressure belong, and duplicating
-//! them here would mean two places to reason about when telemetry goes missing.
-//! `docs/` records this as the deliberate v1 boundary rather than an oversight.
+//! Deliberately thin: no queue, no retry, no buffer. The bridge is stateless and a
+//! failed export is reported, not held - buffering and backpressure belong in the
+//! collector this sits in front of, not in two places.
 
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
@@ -59,10 +56,9 @@ pub struct Exporter {
 
 /// Installs the TLS backend, once per process.
 ///
-/// rustls is built here without a compiled-in default provider, and `reqwest`
-/// *panics* when a client is built before one is installed. Doing it here rather
-/// than in `main` means the exporter cannot be constructed in the wrong order -
-/// which is exactly the mistake a test, or a second entry point, would make.
+/// rustls has no compiled-in default here and `reqwest` *panics* if a client is built
+/// before one is installed. Doing it here means the exporter cannot be constructed in
+/// the wrong order - the mistake a test, or a second entry point, would make.
 fn install_crypto_provider() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
@@ -82,10 +78,8 @@ impl Exporter {
 
         let mut headers = HeaderMap::new();
         for (key, value) in &config.headers {
-            // A header that cannot be represented is dropped with a warning rather
-            // than failing start-up: the rest of the configuration is usable, and an
-            // exporter that refuses to start takes the application's telemetry with
-            // it.
+            // Dropped with a warning rather than failing start-up: an exporter that
+            // refuses to start takes the application's telemetry with it.
             match (
                 HeaderName::try_from(key.as_str()),
                 HeaderValue::from_str(value),

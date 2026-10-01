@@ -1,13 +1,11 @@
 //! Wire format in, normalized model out.
 //!
 //! This module and its `metrics` child are the only places that know what the SDK's
-//! single-letter keys mean. They also resolve everything the wire leaves implicit -
-//! display names, component types, absolute timestamps, the split of nested metric
-//! objects into individual streams - so that `mapping` translates a settled model
-//! rather than interpreting a payload a second time.
+//! single-letter keys mean. They also resolve what the wire leaves implicit - display
+//! names, component types, absolute timestamps - so `mapping` translates a settled
+//! model rather than interpreting the payload a second time.
 //!
-//! Snapshots, spans and logs are decoded here; `metrics` takes the two metric
-//! sections, which are shaped unlike anything else on the wire and unlike each other.
+//! Snapshots, spans and logs are decoded here; the two metric sections in `metrics`.
 
 use chrono::{DateTime, Utc};
 use flate2::read::GzDecoder;
@@ -37,9 +35,8 @@ pub enum DecodeError {
 
 /// Decodes a request body into a batch.
 ///
-/// `gzipped` follows the request's `Content-Encoding`. The SDK always compresses,
-/// but the header is honoured rather than assumed so that a plain-JSON body - what
-/// anyone reaches for when reproducing a problem with `curl` - also works.
+/// `gzipped` follows `Content-Encoding`. The SDK always compresses, but the header is
+/// honoured rather than assumed so a plain-JSON body from `curl` also works.
 pub fn decode(body: &[u8], gzipped: bool) -> Result<Batch, DecodeError> {
     let json = if gzipped {
         let mut decoded = Vec::new();
@@ -116,9 +113,8 @@ fn normalize_request(snapshot: protocol::RequestSnapshot) -> Operation {
 
 /// A job becomes an operation, or is dropped when it has no trace id.
 ///
-/// `ti` is optional on a job and required everywhere downstream: OTLP has no span
-/// without a trace. Synthesising one from the job id would be worse than dropping -
-/// it would put the job in a trace of its own that no request links to, which reads
+/// `ti` is optional on a job but required downstream: OTLP has no span without a
+/// trace. Synthesising one would put the job in a trace nothing links to, which reads
 /// as a real orphan rather than as missing data.
 fn normalize_job(snapshot: protocol::JobSnapshot) -> Option<Operation> {
     let trace_id = snapshot.trace_id?;
@@ -149,10 +145,8 @@ fn normalize_job(snapshot: protocol::JobSnapshot) -> Option<Operation> {
 
 /// The root span's name for a request.
 ///
-/// HTTP follows the semantic conventions' `{method} {route}`. The other transports
-/// have no convention to follow, so they use the operation id the SDK built, which
-/// is already the most specific label available: `Query.orders` for GraphQL,
-/// `gateway:pattern` for a WebSocket message.
+/// HTTP follows the conventions' `{method} {route}`. The other transports have none,
+/// so they use the operation id the SDK built - `Query.orders`, `gateway:pattern`.
 fn request_name(info: &RequestInfo) -> String {
     let operation = info
         .operation_id
@@ -169,9 +163,8 @@ fn request_name(info: &RequestInfo) -> String {
 /// Whether a job came off a queue or from a timer.
 ///
 /// The `@nestjs/schedule` instrumentation writes the scheduler kind into the queue
-/// name, so these four values are what a scheduled run looks like. A real BullMQ
-/// queue called `cron` would be misread, which is a fair trade for distinguishing
-/// the two at all - and `nestjs.job.queue` still says what the name was.
+/// name, so these four values are what a scheduled run looks like. A real queue
+/// called `cron` would be misread; `nestjs.job.queue` still records the name.
 fn job_source(queue_name: Option<&str>) -> JobSource {
     match queue_name {
         Some("cron") | Some("interval") | Some("timeout") | Some("schedule") => {
@@ -184,10 +177,8 @@ fn job_source(queue_name: Option<&str>) -> JobSource {
 /// The root span's name for a job.
 ///
 /// A queue job follows the messaging conventions' `{operation} {destination}`. A
-/// scheduled run has no destination - `interval` is the kind of timer, not a place -
-/// so it is named after the handler alone and the kind goes in an attribute;
-/// `rollup interval` reads like a queue called "interval", which is exactly the
-/// confusion worth avoiding.
+/// scheduled run has no destination - `interval` is a kind of timer, not a place - so
+/// it is named after its handler alone; `rollup interval` would read like a queue.
 fn job_name(info: &JobInfo) -> String {
     match info.source {
         JobSource::Scheduled => info
@@ -222,10 +213,7 @@ fn normalize_span(node: protocol::TraceNode) -> Span {
         name: span_name(&node, kind),
         component: kind,
         // Kept verbatim even for an outgoing span, where they hold a driver name and
-        // an operation rather than a Nest class and method. The mapper needs both -
-        // they are where `db.operation.name` and the peer address come from - and it
-        // is the mapper, not this, that decides they are not worth a `nestjs.*`
-        // attribute.
+        // an operation. `db.operation.name` and the peer address come from them.
         class_name: node.class_name.clone(),
         method_name: node.method_key.clone(),
         observe_span_id: node.span_id.clone(),
@@ -241,9 +229,8 @@ fn normalize_span(node: protocol::TraceNode) -> Span {
 
 /// What a span is called in a waterfall.
 ///
-/// `n` wins whenever it is set: the SDK writes it for manual spans and for collapsed
-/// nodes, where it already reads `ValidationPipe.transform x27`. Otherwise the name
-/// is built from the class and method, in Nest's own `Class.method` form.
+/// `n` wins when set: the SDK writes it for manual and collapsed spans, where it
+/// already reads `ValidationPipe.transform x27`. Otherwise `Class.method`.
 fn span_name(node: &protocol::TraceNode, kind: Component) -> String {
     if let Some(name) = node.name.as_deref().filter(|name| !name.is_empty()) {
         return name.to_string();
@@ -272,11 +259,10 @@ fn span_name(node: &protocol::TraceNode, kind: Component) -> String {
 
 /// `None` when the span did not fail.
 ///
-/// `e: true` is the SDK's "an error occurred but was not captured" form, which every
-/// failed non-root span uses. `e: false` is the negative of that and must not be read
-/// as a failure - the SDK normally omits the key instead, but a literal `false` is
-/// within its own contract and turning it into an errored span would fail a span
-/// that succeeded.
+/// `e: true` is the SDK's "failed but not captured" form, used by every failed
+/// non-root span. `e: false` is its negative and must not be read as a failure -
+/// it is within the contract, and treating it as one would fail a span that
+/// succeeded.
 fn normalize_span_error(error: protocol::SpanError) -> Option<SpanOutcome> {
     match error {
         protocol::SpanError::Flag(false) => None,

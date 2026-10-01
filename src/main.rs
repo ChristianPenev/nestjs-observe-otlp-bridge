@@ -55,9 +55,8 @@ async fn main() -> anyhow::Result<()> {
 
 /// Waits for the process to be asked to stop.
 ///
-/// A container runtime sends SIGTERM and then waits; without handling it the
-/// process is killed outright and whatever batch was mid-export is lost for no
-/// reason. In-flight requests are allowed to finish.
+/// Without this a container runtime's SIGTERM kills the process outright and whatever
+/// batch was mid-export is lost. In-flight requests are allowed to finish.
 async fn shutdown_signal() {
     use tokio::signal::unix::{SignalKind, signal};
 

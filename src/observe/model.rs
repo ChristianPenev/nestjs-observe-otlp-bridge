@@ -1,15 +1,9 @@
 //! The normalized telemetry model.
 //!
-//! Nothing here is shaped by the Observe wire format or by OTLP. It exists so the
-//! two can change independently: `decoder` builds this from whatever the SDK sent,
-//! and `mapping` reads only this. A new SDK version that renames a key touches the
-//! decoder; a semantic-convention revision touches the mapper; neither reaches the
-//! other through this module.
-//!
-//! The decoder also resolves, once and here, the things the wire leaves implicit -
-//! a span's display name, which Nest concept a class plays, whether a request and a
-//! job should be treated alike - so that the mapper is a translation rather than a
-//! second round of interpretation.
+//! Shaped by neither the wire format nor OTLP, so the two can change independently:
+//! an SDK key rename touches the decoder, a semantic-convention revision touches the
+//! mapper, and neither reaches the other through here. Everything the wire leaves
+//! implicit is already resolved by the time it lands in these types.
 
 use chrono::{DateTime, Utc};
 use serde_json::Value;
@@ -119,12 +113,10 @@ pub struct JobInfo {
 
 /// What made a job run.
 ///
-/// `@nestjs/schedule` and BullMQ both arrive in the `jobs` section with no field
-/// distinguishing them, but the schedule instrumentation puts the scheduler kind
-/// where a queue name would go - `cron`, `interval`, `timeout`, or `schedule` when
-/// the kind is unknown. That is the only signal, and it is enough: a timer firing is
-/// not a message being consumed, and the messaging conventions should not claim it
-/// is.
+/// `@nestjs/schedule` and BullMQ share the `jobs` section with nothing to tell them
+/// apart, except that the schedule instrumentation puts the scheduler kind - `cron`,
+/// `interval`, `timeout`, `schedule` - where a queue name would go. Enough: a timer
+/// firing is not a message being consumed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JobSource {
     Queue,
@@ -172,8 +164,7 @@ pub struct Span {
     pub method_name: Option<String>,
     /// The SDK's `s`: a UUIDv7 minted per invocation. Kept in its original form
     /// because log records carry the same value, and because it is the id the hosted
-    /// collector would have stored - which makes a trace here cross-referenceable
-    /// with one there. Documented as optional, and occasionally absent.
+    /// collector would have stored. Documented as optional, occasionally absent.
     pub observe_span_id: Option<String>,
     /// A span the application opened itself, rather than one instrumentation did.
     pub manual: bool,
@@ -190,9 +181,8 @@ pub struct Span {
 
 /// Which Nest concept a span represents.
 ///
-/// Inferred, not received. The variants are the ones the SDK can actually produce a
-/// span for; anything unrecognised stays `Provider`, which is what a plain injectable
-/// is anyway.
+/// Inferred, not received. Anything unrecognised stays `Provider`, which is what a
+/// plain injectable is anyway.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Component {
     Controller,
@@ -329,10 +319,9 @@ impl Severity {
 
 /// A single metric data point.
 ///
-/// Flattened deliberately: Observe sends runtime metrics as one nested object and
-/// custom metrics as a list of differently-shaped records, while OTLP wants a stream
-/// per measurement. Doing that split in the decoder keeps the mapper from having to
-/// know which section a number came from.
+/// Flattened deliberately: the wire sends two differently-shaped sections, OTLP wants
+/// one stream per measurement, and splitting in the decoder keeps the mapper from
+/// having to know which section a number came from.
 #[derive(Debug, Clone)]
 pub struct Metric {
     /// A dotted OTLP metric name, e.g. `nestjs.runtime.memory.heap.used`.

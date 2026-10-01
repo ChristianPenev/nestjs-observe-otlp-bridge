@@ -1,35 +1,14 @@
 //! Working out which Nest concept a span represents.
 //!
-//! The wire does not say. A span carries `className`, `methodKey`, and an `origin`
-//! that distinguishes only `manual` from `auto` - there is no field anywhere in
-//! `@nestjs/observe@0.3.5` that marks a span as a guard rather than a service. The
-//! SDK does not need one: it reports to a collector that renders class and method
-//! directly, so the distinction never has to be machine-readable.
+//! The wire does not say - nothing in `@nestjs/observe@0.3.5` marks a span as a guard
+//! rather than a service, because the hosted collector renders class and method
+//! directly and never needs the distinction machine-readable. A bridge does need it:
+//! `nestjs.type` is what makes a trace searchable by what the framework was doing.
 //!
-//! A bridge does need it, because `nestjs.type` is the attribute that makes a trace
-//! searchable by the thing the framework was doing ("show me requests where a guard
-//! was slow"). So it is inferred here, from the two signals Nest itself makes
-//! reliable, in this order:
-//!
-//! 1. **A driver name.** Outgoing spans are opened against `pg`, `mysql2`,
-//!    `mongodb` or `http` rather than a class, and carry `db.system` or
-//!    `http.method` tags. Exact names, corroborated by the tags, so an application
-//!    class that happens to be called `Http` is not mistaken for one.
-//! 2. **The class name's suffix.** Nest's conventions are strong and
-//!    near-universal (`AuthGuard`, `UsersController`, `LoggingInterceptor`), and
-//!    the enhancer classes the framework itself ships follow them too.
-//! 3. **An interface method name.** `canActivate`, `intercept` and `catch` are
-//!    declared by `CanActivate`, `NestInterceptor` and `ExceptionFilter`, so a class
-//!    with an unconventional name is still recognisable by the hook it implements.
-//!
-//! `transform` and `use` are deliberately *not* in that third group. They are the
-//! `PipeTransform` and `NestMiddleware` hooks, but they are also ordinary method
-//! names on ordinary services, and misfiling a service as a pipe is worse than
-//! leaving it as `provider`. Those two are recognised by suffix only.
-//!
-//! Inference can be wrong. It is a labelling convenience layered on top of
-//! `nestjs.class.name` and `nestjs.method.name`, which are always exact, and
-//! `docs/mapping.md` says so where users will read it.
+//! So it is inferred, in order: manual origin, driver name corroborated by its tags,
+//! class-name suffix, interface hook, then `provider`. It is a heuristic and it can
+//! be wrong; `nestjs.class.name` and `nestjs.method.name` are always exact.
+//! `docs/mapping.md` records where it fails.
 
 use crate::observe::model::Component;
 use crate::observe::protocol::TraceNode;
@@ -68,9 +47,8 @@ const HOOK_METHODS: [(&str, Component); 3] = [
 
 /// Classifies one span.
 ///
-/// `manual` spans are reported as such whatever they are named: the application
-/// opened them by hand, so a suffix on the surrounding class says nothing about what
-/// the span covers.
+/// `manual` spans are reported as such whatever they are named: the application chose
+/// what to wrap, so the surrounding class says nothing.
 pub fn classify(node: &TraceNode) -> Component {
     if node.origin.as_deref() == Some("manual") {
         return Component::Manual;
@@ -100,10 +78,8 @@ pub fn classify(node: &TraceNode) -> Component {
 /// Recognises a span opened by an outgoing-call integration rather than by the
 /// instance decorator.
 ///
-/// The tag check is what makes this safe. `http` and `pg` are plausible class names,
-/// and a bare name match would relabel an application's own `HttpService` as a
-/// client span - losing its `nestjs.*` attributes and giving it a span kind that
-/// says the time left the process when it did not.
+/// The tag check is what makes it safe: `http` and `pg` are plausible class names, and
+/// a bare match would relabel an application's own `HttpService` as a client span.
 fn classify_outgoing(class_name: &str, node: &TraceNode) -> Option<Component> {
     let has_tag = |key: &str| {
         node.tags
